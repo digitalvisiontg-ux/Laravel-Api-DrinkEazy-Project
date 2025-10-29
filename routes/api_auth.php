@@ -14,7 +14,12 @@ Route::prefix('auth')->group(function () {
     // Mot de passe oublié
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('reset-password', [AuthController::class, 'resetPassword']);
+    Route::post('verify-otp', [AuthController::class, 'verifyOtp']);
     Route::middleware('auth:sanctum')->delete('delete-account', [AuthController::class, 'deleteAccount']);
+    Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+    Route::middleware('auth:sanctum')->get('/me', function (Request $request) {
+    return response()->json(['user' => $request->user()]);
+});
 });
 
 
