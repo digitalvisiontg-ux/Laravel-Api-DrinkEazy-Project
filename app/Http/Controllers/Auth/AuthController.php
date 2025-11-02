@@ -20,11 +20,19 @@ class AuthController extends Controller
     {
         try {
             $request->validate([
-                'name' => 'required|string|max:255',
-                'email' => 'nullable|email|unique:users,email',
-                'phone' => 'nullable|string|unique:users,phone',
-                'password' => 'required|string|min:6|confirmed',
-            ]);
+            'name' => 'required|string|max:255',
+            'email' => ['nullable', 'email:rfc,dns', 'unique:users,email', 'required_without:phone'],
+            'phone' => ['nullable', 'string', 'unique:users,phone', 'required_without:email'],
+            'password' => 'required|string|min:6|confirmed',
+        ], [
+            'email.required_without' => "L'email est requis si aucun numéro de téléphone n'est fourni.",
+            'email.email' => "Format d'email invalide.",
+            'email.unique' => "Cet email est déjà utilisé.",
+            'phone.required_without' => "Le numéro de téléphone est requis si aucun email n'est fourni.",
+            'phone.unique' => "Ce numéro est déjà utilisé.",
+            'password.required' => 'Le mot de passe est requis.',
+            'password.confirmed' => "La confirmation du mot de passe ne correspond pas.",
+        ]);
 
             if (!$request->phone && !$request->email) {
                 return response()->json(['message' => 'Email ou téléphone requis'], 422);
@@ -234,12 +242,24 @@ public function login(Request $request)
             'password' => 'required|string',
         ]);
 
-        $user = User::where('email', $request->login)
-            ->orWhere('phone', $request->login)
-            ->first();
+        $login = $request->login;
+        $user = null;
 
-        if (!$user) {
-            return response()->json(['message' => 'Email ou numéro incorrect'], 401);
+        if (filter_var($login, FILTER_VALIDATE_EMAIL)) {
+            $user = User::where('email', $login)->first();
+            if (!$user) {
+                return response()->json(['message' => 'Email introuvable'], 401);
+            }
+        } else {
+            // Cas téléphone — normaliser et chercher
+            $phone = PhoneNormalizer::normalizeTg($login) ?? PhoneNormalizer::normalizeGab($login);
+            if (!$phone) {
+                return response()->json(['message' => 'Numéro invalide'], 422);
+            }
+            $user = User::where('phone', $phone)->first();
+            if (!$user) {
+                return response()->json(['message' => 'Numéro introuvable. Veuillez vous inscrire d\'abord.'], 401);
+            }
         }
         if (!Hash::check($request->password, $user->password)) {
             return response()->json(['message' => 'Mot de passe incorrect'], 401);

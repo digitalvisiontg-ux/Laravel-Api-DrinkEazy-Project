@@ -20,6 +20,8 @@ return new class extends Migration
             $table->string('phone')->unique()->nullable();
             $table->timestamp('phone_verified_at')->nullable();
             $table->string('password');
+            $table->enum('role', ['admin', 'serveur', 'client', 'invite'])->default('invite');
+            $table->boolean('actif')->default(true);
             $table->rememberToken();
             $table->timestamps();
         });

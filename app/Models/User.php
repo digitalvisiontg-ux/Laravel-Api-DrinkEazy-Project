@@ -68,4 +68,10 @@ class User extends Authenticatable
     {
         return $this->phone;
     }
+
+    // Vérification des rôles
+    public function estAdmin(): bool { return $this->role === 'admin'; }
+    public function estServeur(): bool { return $this->role === 'serveur'; }
+    public function estClient(): bool { return $this->role === 'client'; }
+    public function estInvite(): bool { return $this->role === 'invite'; }
 }
