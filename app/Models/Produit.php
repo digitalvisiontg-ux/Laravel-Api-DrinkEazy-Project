@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -29,9 +30,18 @@ class Produit extends Model
         return $this->belongsTo(Categorie::class, 'categorieId');
     }
 
-    // Relation : un produit peut avoir plusieurs promotions
+    // Promotions directes appliquées à ce produit
     public function promotions()
     {
-        return $this->hasMany(Promotion::class, 'produitId');
+        return $this->morphMany(Promotion::class, 'cible');
+    }
+
+    // Récupère les promotions actives de ce produit
+    public function promotionsActives()
+    {
+        return $this->promotions()
+            ->where('actif', true)
+            ->where('debut', '<=', now())
+            ->where('fin', '>=', now());
     }
 }

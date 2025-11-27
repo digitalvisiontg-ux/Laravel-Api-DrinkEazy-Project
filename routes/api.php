@@ -14,3 +14,4 @@ Route::post('/bars/modif', [BarController::class, 'update']);
 
 require __DIR__.'/api_auth.php';
 require __DIR__.'/api_user.php';
+require __DIR__.'/api_admin.php';

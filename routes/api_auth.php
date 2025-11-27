@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
+    Route::middleware('auth:sanctum')->post('profile', [AuthController::class, 'updateProfile']);
 
     // Mot de passe oublié
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
@@ -17,9 +18,7 @@ Route::prefix('auth')->group(function () {
     Route::post('verify-otp', [AuthController::class, 'verifyOtp']);
     Route::middleware('auth:sanctum')->delete('delete-account', [AuthController::class, 'deleteAccount']);
     Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
-    Route::middleware('auth:sanctum')->get('/me', function (Request $request) {
-    return response()->json(['user' => $request->user()]);
-});
+    Route::middleware('auth:sanctum')->get('/me', [AuthController::class, 'me']);
 });
 
 

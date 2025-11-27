@@ -15,24 +15,40 @@ use App\Providers\TwilioService;
 
 class AuthController extends Controller
 {
+
+
+
+    public function me(Request $request)
+    {
+        try {
+
+            return response()->json([
+                'status' => 'success',
+                'user' => $request->user()
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json(['message' => 'Erreur serveur', 'error' => $th->getMessage()], 500);
+        }
+
+    }
     // --- REGISTER ---
     public function register(Request $request)
     {
         try {
             $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => ['nullable', 'email:rfc,dns', 'unique:users,email', 'required_without:phone'],
-            'phone' => ['nullable', 'string', 'unique:users,phone', 'required_without:email'],
-            'password' => 'required|string|min:6|confirmed',
-        ], [
-            'email.required_without' => "L'email est requis si aucun numéro de téléphone n'est fourni.",
-            'email.email' => "Format d'email invalide.",
-            'email.unique' => "Cet email est déjà utilisé.",
-            'phone.required_without' => "Le numéro de téléphone est requis si aucun email n'est fourni.",
-            'phone.unique' => "Ce numéro est déjà utilisé.",
-            'password.required' => 'Le mot de passe est requis.',
-            'password.confirmed' => "La confirmation du mot de passe ne correspond pas.",
-        ]);
+                'name' => 'required|string|max:255',
+                'email' => ['nullable', 'email:rfc,dns', 'unique:users,email', 'required_without:phone'],
+                'phone' => ['nullable', 'string', 'unique:users,phone', 'required_without:email'],
+                'password' => 'required|string|min:6|confirmed',
+            ], [
+                'email.required_without' => "L'email est requis si aucun numéro de téléphone n'est fourni.",
+                'email.email' => "Format d'email invalide.",
+                'email.unique' => "Cet email est déjà utilisé.",
+                'phone.required_without' => "Le numéro de téléphone est requis si aucun email n'est fourni.",
+                'phone.unique' => "Ce numéro est déjà utilisé.",
+                'password.required' => 'Le mot de passe est requis.',
+                'password.confirmed' => "La confirmation du mot de passe ne correspond pas.",
+            ]);
 
             if (!$request->phone && !$request->email) {
                 return response()->json(['message' => 'Email ou téléphone requis'], 422);
@@ -234,50 +250,50 @@ class AuthController extends Controller
     }
 
     // --- LOGIN ---
-public function login(Request $request)
-{
-    try {
-        $request->validate([
-            'login' => 'required|string', // ou juste 'string' si login = email ou phone
-            'password' => 'required|string',
-        ]);
+    public function login(Request $request)
+    {
+        try {
+            $request->validate([
+                'login' => 'required|string', // ou juste 'string' si login = email ou phone
+                'password' => 'required|string',
+            ]);
 
-        $login = $request->login;
-        $user = null;
+            $login = $request->login;
+            $user = null;
 
-        if (filter_var($login, FILTER_VALIDATE_EMAIL)) {
-            $user = User::where('email', $login)->first();
-            if (!$user) {
-                return response()->json(['message' => 'Email introuvable'], 401);
+            if (filter_var($login, FILTER_VALIDATE_EMAIL)) {
+                $user = User::where('email', $login)->first();
+                if (!$user) {
+                    return response()->json(['message' => 'Email introuvable'], 401);
+                }
+            } else {
+                // Cas téléphone — normaliser et chercher
+                $phone = PhoneNormalizer::normalizeTg($login) ?? PhoneNormalizer::normalizeGab($login);
+                if (!$phone) {
+                    return response()->json(['message' => 'Numéro invalide'], 422);
+                }
+                $user = User::where('phone', $phone)->first();
+                if (!$user) {
+                    return response()->json(['message' => 'Numéro introuvable. Veuillez vous inscrire d\'abord.'], 401);
+                }
             }
-        } else {
-            // Cas téléphone — normaliser et chercher
-            $phone = PhoneNormalizer::normalizeTg($login) ?? PhoneNormalizer::normalizeGab($login);
-            if (!$phone) {
-                return response()->json(['message' => 'Numéro invalide'], 422);
+            if (!Hash::check($request->password, $user->password)) {
+                return response()->json(['message' => 'Mot de passe incorrect'], 401);
             }
-            $user = User::where('phone', $phone)->first();
-            if (!$user) {
-                return response()->json(['message' => 'Numéro introuvable. Veuillez vous inscrire d\'abord.'], 401);
-            }
+
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            return response()->json([
+                'message' => 'Connexion réussie',
+                'token' => $token,
+                'user' => $user,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => 'Format de l\'email invalide'], 422);
+        } catch (\Throwable $th) {
+            return response()->json(['message' => 'Erreur serveur', 'error' => $th->getMessage()], 500);
         }
-        if (!Hash::check($request->password, $user->password)) {
-            return response()->json(['message' => 'Mot de passe incorrect'], 401);
-        }
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        return response()->json([
-            'message' => 'Connexion réussie',
-            'token' => $token,
-            'user' => $user,
-        ]);
-    } catch (\Illuminate\Validation\ValidationException $e) {
-        return response()->json(['message' => 'Format de l\'email invalide'], 422);
-    } catch (\Throwable $th) {
-        return response()->json(['message' => 'Erreur serveur', 'error' => $th->getMessage()], 500);
     }
-}
 
     public function resetPassword(Request $request)
     {
@@ -356,7 +372,7 @@ public function login(Request $request)
                 $otpData = OtpCode::generateForEmail($user->email, 6, 5, $user->id, 'email');
                 $user->notify(new ConfirmEmailNotification($otpData['otp']));
 
-                return response()->json(['success' => true,'message' => 'OTP envoyé par email']);
+                return response()->json(['success' => true, 'message' => 'OTP envoyé par email']);
             } else {
                 $phone = PhoneNormalizer::normalizeTg($login) ?? PhoneNormalizer::normalizeGab($login);
                 if (!$phone)
@@ -370,7 +386,7 @@ public function login(Request $request)
                 $twilio = new TwilioService();
                 $twilio->sendSms($phone, "Votre code OTP DrinkEazy est : {$otpData['otp']}");
 
-                return response()->json(['success' => true,'message' => 'OTP envoyé par SMS']);
+                return response()->json(['success' => true, 'message' => 'OTP envoyé par SMS']);
             }
         } catch (\Throwable $th) {
             return response()->json(['message' => 'Erreur serveur', 'error' => $th->getMessage()], 500);
@@ -394,16 +410,71 @@ public function login(Request $request)
         }
     }
     public function logout(Request $request)
-{
-    try {
-        $request->user()->currentAccessToken()->delete();
+    {
+        try {
+            $request->user()->currentAccessToken()->delete();
 
-        return response()->json([
-            'message' => 'Déconnexion réussie'
-        ]);
-    } catch (\Throwable $th) {
-        return response()->json(['message' => 'Erreur serveur', 'error' => $th->getMessage()], 500);
+            return response()->json([
+                'message' => 'Déconnexion réussie'
+            ]);
+        } catch (\Throwable $th) {
+            return response()->json(['message' => 'Erreur serveur', 'error' => $th->getMessage()], 500);
+        }
     }
-}
+
+    public function updateProfile(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            // Validation initiale (permet valeurs nullables, unique excluant l'utilisateur courant)
+            $request->validate([
+                'name' => 'nullable|string|max:255',
+                'email' => 'nullable|email|unique:users,email,' . $user->id,
+                'phone' => 'nullable|string|unique:users,phone,' . $user->id,
+            ], [
+                'email.email' => "Format d'email invalide.",
+                'email.unique' => "Cet email est déjà utilisé.",
+                'phone.unique' => "Ce numéro est déjà utilisé.",
+            ]);
+
+            // Validation métier : au moins email ou phone non vide
+            if (!$request->filled('email') && !$request->filled('phone')) {
+                return response()->json(['message' => 'Veuillez fournir au moins un email ou un numéro de téléphone.'], 422);
+            }
+
+            // Mise à jour conditionnelle — n'affecte que si le champ est renseigné et non vide
+            if ($request->filled('name')) {
+                $user->name = trim($request->input('name'));
+            }
+
+            if ($request->filled('email')) {
+                $user->email = trim($request->input('email'));
+            }
+
+            if ($request->filled('phone')) {
+                $rawPhone = trim($request->input('phone'));
+                $normalizedPhone = PhoneNormalizer::normalizeTg($rawPhone) ?? PhoneNormalizer::normalizeGab($rawPhone);
+                if (!$normalizedPhone) {
+                    return response()->json(['message' => 'Numéro invalide'], 422);
+                }
+                $user->phone = $normalizedPhone;
+            }
+
+            $user->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Profil mis à jour avec succès',
+                'user' => $user,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Laravel renverra déjà des erreurs structurées, on laisse passer
+            return response()->json(['message' => 'Validation échouée', 'errors' => $e->errors()], 422);
+        } catch (\Throwable $th) {
+            return response()->json(['message' => 'Erreur serveur', 'error' => $th->getMessage()], 500);
+        }
+    }
+
 
 }

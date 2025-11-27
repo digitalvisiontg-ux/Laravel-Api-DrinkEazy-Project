@@ -13,9 +13,11 @@ class CategorieSeeder extends Seeder
      */
     public function run(): void
     {
-        //
+        // Create categories if they don't already exist
         Categorie::create(['nomCat' => 'Bière']);
         Categorie::create(['nomCat' => 'Cocktail']);
         Categorie::create(['nomCat' => 'Vin']);
+        Categorie::create(['nomCat' => 'Soft']);
+        Categorie::create(['nomCat' => 'Spiritueux']);
     }
 }

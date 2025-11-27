@@ -13,26 +13,24 @@ class Promotion extends Model
     protected $table = 'promotions';
 
     protected $fillable = [
-        'nomPromo',
-        'typePromo',
-        'valeurPromo',
-        'qteAchat',
-        'qteOfferte',
-        'debutPromo',
-        'finPromo',
-        'ciblePromo',
-        'categorieId',
-        'produitId',
-        'actif',
+        'type', 'type_reduction', 'valeur_reduction',
+        'quantite_achat', 'quantite_offerte',
+        'heure_debut', 'heure_fin',
+        'cible_type', 'cible_id',
+        'debut', 'fin', 'actif'
     ];
 
-    public function produit()
+    // Relation polymorphe avec le modèle cible (Produit ou Categorie)
+    public function cible()
     {
-        return $this->belongsTo(Produit::class, 'produitId');
+        return $this->morphTo();
     }
 
-    public function categorie()
+    // Scope pour ne récupérer que les promotions actives
+    public function scopeActives($query)
     {
-        return $this->belongsTo(Categorie::class, 'categorieId');
+        return $query->where('actif', true)
+                     ->where('debut', '<=', now())
+                     ->where('fin', '>=', now());
     }
 }
