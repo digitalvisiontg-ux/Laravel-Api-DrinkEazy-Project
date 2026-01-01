@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\TableController;
 use App\Http\Controllers\User\PromotionController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\User\ProduitController;
@@ -22,3 +23,9 @@ Route::post('/promotions', [PromotionController::class, 'store']);
 Route::put('/promotions/{id}', [PromotionController::class, 'update']);
 Route::delete('/promotions/{id}', [PromotionController::class, 'destroy']);
 Route::patch('/promotions/{id}/toggle', [PromotionController::class, 'toggleActivation']);
+
+
+Route::prefix('table')->group(function () {
+    Route::post('/verify', [TableController::class, 'verifyByToken']);
+    Route::post('/verify-manual', [TableController::class, 'verifyManually']);
+});
