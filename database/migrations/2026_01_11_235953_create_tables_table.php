@@ -13,8 +13,10 @@ return new class extends Migration
     {
         Schema::create('tables', function (Blueprint $table) {
             $table->id();
-            $table->unsignedInteger('numero_table');
+            $table->string('numero_table');
+            $table->string('libelle');
             $table->uuid('token')->unique();
+            $table->string('qr_image')->nullable();
             $table->boolean('actif')->default(true);
             $table->timestamps();
         });

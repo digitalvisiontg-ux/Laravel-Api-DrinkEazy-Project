@@ -13,10 +13,23 @@ return new class extends Migration
     {
         Schema::create('commandes', function (Blueprint $table) {
             $table->id();
-            $table->string('numeroTable');
-            $table->string('methodePaiement'); // ex: cash, carte, mobile
-            $table->enum('statut', ['en_attente', 'en_cours', 'terminee'])->default('en_attente');
+
+            $table->foreignId('table_id')
+                ->constrained('tables')
+                ->cascadeOnDelete();
+
+            $table->enum('status', [
+                'pending',
+                'preparing',
+                'ready',
+                'delivered',
+                'paid'
+            ])->default('pending');
+
+            $table->text('commentaire_client')->nullable();
+
             $table->decimal('total', 10, 2)->default(0);
+
             $table->timestamps();
         });
     }

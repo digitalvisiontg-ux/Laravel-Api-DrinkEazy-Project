@@ -19,7 +19,7 @@ return new class extends Migration
             $table->text('descProd')->nullable(); // Description du produit
             $table->integer('qteStock')->default(0); // Quantité en stock
             $table->boolean('actif')->default(true); // Produit visible ou non
-            $table->string('imageUrl')->nullable(); // Image du produit
+            $table->string(column: 'imageUrl')->nullable(); // Image du produit
             $table->foreignId('categorieId')->constrained('categories')->onDelete('cascade'); // Relation vers catégorie
             $table->timestamps();
         });

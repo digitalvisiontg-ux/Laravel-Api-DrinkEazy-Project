@@ -10,16 +10,13 @@ class Table extends Model
     //
     protected $fillable = [
         'numero_table',
+        'libelle',
         'token',
         'actif'
     ];
 
-    protected static function boot()
+    public function commandes()
     {
-        parent::boot();
-
-        static::creating(function ($table) {
-            $table->token = Str::uuid();
-        });
+        return $this->hasMany(Commande::class);
     }
 }

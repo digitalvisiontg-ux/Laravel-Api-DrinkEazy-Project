@@ -1,58 +1,98 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\User;
 
 use App\Models\Table;
+use App\Services\QrCodeService;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Str;
 
 class TableController extends Controller
 {
-    //
-    public function verifyByToken(Request $request)
+    public function store(Request $request, QrCodeService $qrService)
     {
         $request->validate([
-            'token' => 'required|uuid'
+            'libelle' => ['required', 'string', 'max:100', 'unique:tables,libelle'],
         ]);
 
-        $table = Table::where('token', $request->token)
+        $table = Table::create([
+            'numero_table' => $this->generateNumeroTable(),
+            'libelle' => $request->libelle,
+            'token' => (string) Str::uuid(),
+            'actif' => true,
+        ]);
+
+        $qrPath = $qrService->generateForTable($table);
+        $table->update(['qr_image' => $qrPath]);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'table_id' => $table->id,
+                'numero_table' => $table->numero_table,
+                'libelle'  => $table->libelle,
+            ]
+        ], 201);
+    }
+
+    public function verify(string $token)
+    {
+        // On cherche directement le token tel qu'il est lu par le scanner
+        $table = Table::where('token', $token)
             ->where('actif', true)
             ->first();
 
         if (!$table) {
             return response()->json([
-                'message' => 'Table invalide ou inactive'
+                'success' => false,
+                'message' => 'Table introuvable, inactive ou QR Code invalide'
             ], 404);
         }
 
-        return response()->json([
-            'table_id' => $table->id,
-            'numero_table' => $table->numero_table
-        ]);
+        return $this->successResponse($table);
     }
 
-    /**
-     * Vérification manuelle (volontairement plus contraignante)
-     */
-    public function verifyManually(Request $request)
+    public function verifyManual(string $numeroTable)
     {
-        $request->validate([
-            'numero_table' => 'required|integer',
-            'code_verification' => 'required|string|min:4'
-        ]);
-
-        $table = Table::where('numero_table', $request->numero_table)
+        $table = Table::where('numero_table', strtoupper($numeroTable))
             ->where('actif', true)
             ->first();
 
-        if (!$table || $request->code_verification !== 'A3F9') {
+        if (!$table) {
             return response()->json([
-                'message' => 'Vérification échouée'
-            ], 403);
+                'success' => false,
+                'message' => 'Numéro de table invalide'
+            ], 404);
         }
 
+        return $this->successResponse($table);
+    }
+
+    private function successResponse(Table $table)
+    {
         return response()->json([
-            'table_id' => $table->id,
-            'numero_table' => $table->numero_table
+            'success' => true,
+            'data' => [
+                'table_id' => $table->id,
+                'numero_table' => $table->numero_table,
+                'libelle'  => $table->libelle,
+            ]
         ]);
+    }
+
+    public function generateNumeroTable(): string
+    {
+        $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        $length = 4;
+
+        do {
+            $code = '';
+            for ($i = 0; $i < $length; $i++) {
+                $code .= $chars[random_int(0, strlen($chars) - 1)];
+            }
+        } while (Table::where('numero_table', $code)->exists());
+
+        return $code;
     }
 }

@@ -1,7 +1,8 @@
 <?php
 
-use App\Http\Controllers\TableController;
+use App\Http\Controllers\User\CommandeController;
 use App\Http\Controllers\User\PromotionController;
+use App\Http\Controllers\User\TableController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\User\ProduitController;
 
@@ -26,6 +27,12 @@ Route::patch('/promotions/{id}/toggle', [PromotionController::class, 'toggleActi
 
 
 Route::prefix('table')->group(function () {
-    Route::post('/verify', [TableController::class, 'verifyByToken']);
-    Route::post('/verify-manual', [TableController::class, 'verifyManually']);
+    Route::get('/verify/{token}', [TableController::class, 'verify']);
+    Route::get('/verify-manual/{numeroTable}', [TableController::class, 'verifyManual']);
+    Route::post('/store', [TableController::class, 'store']);
 });
+
+
+Route::post('/commandes', [CommandeController::class, 'store']);
+
+Route::get('/commandes/{id}', [CommandeController::class, 'show']);
