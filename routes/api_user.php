@@ -33,6 +33,7 @@ Route::prefix('table')->group(function () {
 });
 
 
-Route::post('/commandes', [CommandeController::class, 'store']);
+    Route::post('/commandes', [CommandeController::class, 'store']);
 
-Route::get('/commandes/{id}', [CommandeController::class, 'show']);
+    Route::get('/commandes/{id}', [CommandeController::class, 'show']);
+    Route::get('/commandes/guest/{token}', [CommandeController::class, 'byGuest']);

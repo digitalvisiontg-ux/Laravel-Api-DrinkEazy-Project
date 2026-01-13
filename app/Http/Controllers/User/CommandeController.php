@@ -8,12 +8,14 @@ use App\Models\Produit;
 use App\Services\PromotionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class CommandeController extends Controller
 {
     public function __construct(
         protected PromotionService $promotionService
-    ) {}
+    ) {
+    }
 
     public function store(Request $request)
     {
@@ -25,7 +27,7 @@ class CommandeController extends Controller
             'items.*.quantite' => 'required|integer|min:1',
         ]);
 
-        return DB::transaction(function () use ($validated) {
+        return DB::transaction(function () use ($validated, $request) {
 
             $total = 0;
             $produitsCommande = [];
@@ -64,9 +66,22 @@ class CommandeController extends Controller
                 $produit->decrement('qteStock', $item['quantite']);
             }
 
+            $user = auth()->user();
+            $guestToken = null;
+            $guestInfos = null;
+
+            if ($user) {
+                $userId = $user->id;
+            } else {
+                $guestToken = $request->header('X-Guest-Token') ?? (string) Str::uuid();
+            }
+
             // 🧾 Création commande
             $commande = Commande::create([
                 'table_id' => $validated['table_id'],
+                'user_id' => $userId ?? null,
+                'guest_token' => $guestToken,
+                'guest_infos' => $guestInfos,
                 'commentaire_client' => $validated['commentaire'] ?? null,
                 'status' => 'pending',
                 'total' => $total,
@@ -96,23 +111,46 @@ class CommandeController extends Controller
     }
 
     public function show($id)
-{
-    $commande = Commande::with([
+    {
+        $commande = Commande::with([
             'table:id,numero_table',
             'produits.produit:id,nomProd,taille'
         ])
-        ->findOrFail($id);
+            ->findOrFail($id);
 
-    return response()->json([
-        'success' => true,
-        'commande' => [
-            'id' => $commande->id,
-            'status' => $commande->status,
-            'total' => $commande->total,
-            'table' => $commande->table->numero_table,
-            'produits' => $commande->produits,
-            'created_at' => $commande->created_at
-        ]
-    ]);
-}
+        return response()->json([
+            'success' => true,
+            'commande' => [
+                'id' => $commande->id,
+                'status' => $commande->status,
+                'total' => $commande->total,
+                'table' => $commande->table->numero_table,
+                'produits' => $commande->produits,
+                'created_at' => $commande->created_at
+            ]
+        ]);
+    }
+
+    public function byGuest(string $token)
+    {
+        $commandes = Commande::with([
+            'table:id,numero_table',
+            'produits.produit:id,nomProd,taille'
+        ])
+            ->where('guest_token', $token)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        if ($commandes->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucune commande trouvée pour cet invité'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,  
+            'commandes' => $commandes
+        ]);
+    }
 }
