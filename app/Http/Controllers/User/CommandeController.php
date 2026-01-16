@@ -76,8 +76,11 @@ class CommandeController extends Controller
                 $guestToken = $request->header('X-Guest-Token') ?? (string) Str::uuid();
             }
 
+            $numeroCommande = $this->generateNumeroCommande();
+
             // 🧾 Création commande
             $commande = Commande::create([
+                'numero_commande' => $numeroCommande,
                 'table_id' => $validated['table_id'],
                 'user_id' => $userId ?? null,
                 'guest_token' => $guestToken,
@@ -95,8 +98,15 @@ class CommandeController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Commande créée avec succès',
-                'commande_id' => $commande->id,
-                'total' => $total
+                'commande' => [
+                    'id' => $commande->id,
+                    'numero_commande' => $commande->numero_commande,
+                    'status' => $commande->status,
+                    'total' => $commande->total,
+                    'table' => $commande->table->libelle,
+                    'produits' => $commande->produits,
+                    'created_at' => $commande->created_at
+                ]
             ], 201);
         });
     }
@@ -113,7 +123,7 @@ class CommandeController extends Controller
     public function show($id)
     {
         $commande = Commande::with([
-            'table:id,numero_table',
+            'table:id,numero_table,libelle',
             'produits.produit:id,nomProd,taille'
         ])
             ->findOrFail($id);
@@ -124,7 +134,7 @@ class CommandeController extends Controller
                 'id' => $commande->id,
                 'status' => $commande->status,
                 'total' => $commande->total,
-                'table' => $commande->table->numero_table,
+                'table' => $commande->table->libelle,
                 'produits' => $commande->produits,
                 'created_at' => $commande->created_at
             ]
@@ -134,7 +144,7 @@ class CommandeController extends Controller
     public function byGuest(string $token)
     {
         $commandes = Commande::with([
-            'table:id,numero_table',
+            'table:id,numero_table,libelle',
             'produits.produit:id,nomProd,taille'
         ])
             ->where('guest_token', $token)
@@ -149,8 +159,18 @@ class CommandeController extends Controller
         }
 
         return response()->json([
-            'success' => true,  
+            'success' => true,
             'commandes' => $commandes
         ]);
+    }
+    private function generateNumeroCommande(): string
+    {
+        $last = Commande::lockForUpdate()
+            ->selectRaw("MAX(CAST(SUBSTRING(numero_commande, 2) AS UNSIGNED)) as max")
+            ->value('max');
+
+        $next = ($last ?? 0) + 1;
+
+        return 'T' . $next;
     }
 }

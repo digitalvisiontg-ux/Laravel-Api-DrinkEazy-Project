@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Commande extends Model
 {
@@ -10,6 +11,7 @@ class Commande extends Model
 
     protected $fillable = [
         'user_id',
+        'numero_commande',
         'guest_token',
         'guest_infos',
         'table_id',
@@ -31,4 +33,6 @@ class Commande extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+
 }

@@ -13,6 +13,9 @@ return new class extends Migration {
         Schema::create('commandes', function (Blueprint $table) {
             $table->id();
 
+            
+            $table->string('numero_commande', 30)->unique()->index();
+
             $table->foreignId('user_id')
                 ->nullable()
                 ->constrained('users')
