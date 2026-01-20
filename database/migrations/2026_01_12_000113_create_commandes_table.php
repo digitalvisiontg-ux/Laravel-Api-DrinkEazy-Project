@@ -13,7 +13,7 @@ return new class extends Migration {
         Schema::create('commandes', function (Blueprint $table) {
             $table->id();
 
-            
+
             $table->string('numero_commande', 30)->unique()->index();
 
             $table->foreignId('user_id')
@@ -29,13 +29,11 @@ return new class extends Migration {
                 ->cascadeOnDelete();
 
             $table->enum('status', [
-                'pending',
-                'preparing',
-                'ready',
-                'delivered',
-                'paid'
-            ])->default('pending');
-
+                'in_progress',
+                'completed',
+                'paid',
+                'cancelled'
+            ])->default('in_progress');
             $table->text('commentaire_client')->nullable();
 
             $table->decimal('total', 10, 2)->default(0);

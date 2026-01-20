@@ -14,10 +14,47 @@ class CommandeController extends Controller
 {
     public function __construct(
         protected PromotionService $promotionService
-    ) {
+    ) {}
+
+    /* ============================================================
+        STORE USER (AUTH OBLIGATOIRE)
+    ============================================================ */
+    public function storeUser(Request $request)
+    {
+        $user = auth()->user(); // garanti non null (middleware)
+
+        return $this->createCommande(
+            request: $request,
+            userId: $user->id,
+            guestToken: null
+        );
     }
 
-    public function store(Request $request)
+    /* ============================================================
+        STORE GUEST (TOKEN OBLIGATOIRE)
+    ============================================================ */
+    public function storeGuest(Request $request)
+    {
+        $guestToken = $request->header('X-Guest-Token');
+
+        if (!$guestToken) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Guest token requis'
+            ], 400);
+        }
+
+        return $this->createCommande(
+            request: $request,
+            userId: null,
+            guestToken: $guestToken
+        );
+    }
+
+    /* ============================================================
+        CORE LOGIC (DRY)
+    ============================================================ */
+    private function createCommande(Request $request, ?int $userId, ?string $guestToken)
     {
         $validated = $request->validate([
             'table_id' => 'required|exists:tables,id',
@@ -27,25 +64,22 @@ class CommandeController extends Controller
             'items.*.quantite' => 'required|integer|min:1',
         ]);
 
-        return DB::transaction(function () use ($validated, $request) {
+        return DB::transaction(function () use ($validated, $userId, $guestToken) {
 
             $total = 0;
-            $produitsCommande = [];
+            $lignes = [];
 
             foreach ($validated['items'] as $item) {
                 $produit = Produit::lockForUpdate()->find($item['produit_id']);
 
-                // ❌ Produit inactif
                 if (!$produit || !$produit->actif) {
-                    abort(400, "Produit indisponible");
+                    abort(400, 'Produit indisponible');
                 }
 
-                // ❌ Stock insuffisant
                 if ($produit->qteStock < $item['quantite']) {
                     abort(400, "Stock insuffisant pour {$produit->nomProd}");
                 }
 
-                // 🔹 Calcul prix final avec promotions
                 $promotions = $this->promotionService->getPromotionsForProduit($produit);
                 $reduction = collect($promotions)->firstWhere('type', 'reduction_prix');
 
@@ -53,94 +87,90 @@ class CommandeController extends Controller
                     ? $this->calculerPrixFinal($produit->prixBase, $reduction)
                     : $produit->prixBase;
 
-                $ligneTotal = $prixUnitaire * $item['quantite'];
-                $total += $ligneTotal;
+                $total += $prixUnitaire * $item['quantite'];
 
-                $produitsCommande[] = [
+                $lignes[] = [
                     'produit_id' => $produit->id,
                     'quantite' => $item['quantite'],
                     'prix_unitaire' => $prixUnitaire,
                 ];
 
-                // 📉 Décrément stock immédiat
                 $produit->decrement('qteStock', $item['quantite']);
             }
 
-            $user = auth()->user();
-            $guestToken = null;
-            $guestInfos = null;
-
-            if ($user) {
-                $userId = $user->id;
-            } else {
-                $guestToken = $request->header('X-Guest-Token') ?? (string) Str::uuid();
-            }
-
-            $numeroCommande = $this->generateNumeroCommande();
-
-            // 🧾 Création commande
             $commande = Commande::create([
-                'numero_commande' => $numeroCommande,
+                'numero_commande' => $this->generateNumeroCommande(),
                 'table_id' => $validated['table_id'],
-                'user_id' => $userId ?? null,
+                'user_id' => $userId,
                 'guest_token' => $guestToken,
-                'guest_infos' => $guestInfos,
                 'commentaire_client' => $validated['commentaire'] ?? null,
-                'status' => 'pending',
+                'status' => 'in_progress',
                 'total' => $total,
             ]);
 
-            // 🧾 Lignes commande
-            foreach ($produitsCommande as $ligne) {
+            foreach ($lignes as $ligne) {
                 $commande->produits()->create($ligne);
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Commande créée avec succès',
-                'commande' => [
-                    'id' => $commande->id,
-                    'numero_commande' => $commande->numero_commande,
-                    'status' => $commande->status,
-                    'total' => $commande->total,
-                    'table' => $commande->table->libelle,
-                    'produits' => $commande->produits,
-                    'created_at' => $commande->created_at
-                ]
+                'commande' => $commande->load([
+                    'table:id,numero_table,libelle',
+                    'produits.produit:id,nomProd,taille'
+                ])
             ], 201);
         });
     }
 
-    private function calculerPrixFinal($prixBase, $promotion)
+    /* ============================================================
+        LIST USER / GUEST
+    ============================================================ */
+    public function index(Request $request)
     {
-        return match ($promotion['type_reduction'] ?? null) {
-            'pourcentage' => round($prixBase - ($prixBase * ($promotion['valeur_reduction'] / 100)), 2),
-            'montant_fixe' => max(0, $prixBase - $promotion['valeur_reduction']),
-            default => $prixBase,
-        };
+        $user = auth()->user();
+        $guestToken = $request->header('X-Guest-Token');
+
+        $query = Commande::with([
+            'table:id,numero_table,libelle',
+            'produits.produit:id,nomProd,taille'
+        ])->orderByDesc('created_at');
+
+        if ($user) {
+            $query->where('user_id', $user->id);
+        } elseif ($guestToken) {
+            $query->where('guest_token', $guestToken);
+        } else {
+            return response()->json([
+                'success' => true,
+                'commandes' => []
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'commandes' => $query->get()
+        ]);
     }
 
-    public function show($id)
+    /* ============================================================
+        SHOW
+    ============================================================ */
+    public function show(int $id)
     {
         $commande = Commande::with([
             'table:id,numero_table,libelle',
             'produits.produit:id,nomProd,taille'
-        ])
-            ->findOrFail($id);
+        ])->findOrFail($id);
 
         return response()->json([
             'success' => true,
-            'commande' => [
-                'id' => $commande->id,
-                'status' => $commande->status,
-                'total' => $commande->total,
-                'table' => $commande->table->libelle,
-                'produits' => $commande->produits,
-                'created_at' => $commande->created_at
-            ]
+            'commande' => $commande
         ]);
     }
 
+    /* ============================================================
+        GUEST ONLY
+    ============================================================ */
     public function byGuest(string $token)
     {
         $commandes = Commande::with([
@@ -148,29 +178,33 @@ class CommandeController extends Controller
             'produits.produit:id,nomProd,taille'
         ])
             ->where('guest_token', $token)
-            ->orderBy('created_at', 'desc')
+            ->orderByDesc('created_at')
             ->get();
-
-        if ($commandes->isEmpty()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Aucune commande trouvée pour cet invité'
-            ], 404);
-        }
 
         return response()->json([
             'success' => true,
             'commandes' => $commandes
         ]);
     }
+
+    /* ============================================================
+        UTILS
+    ============================================================ */
+    private function calculerPrixFinal(float $prixBase, array $promotion): float
+    {
+        return match ($promotion['type_reduction'] ?? null) {
+            'pourcentage' => round($prixBase * (1 - $promotion['valeur_reduction'] / 100), 2),
+            'montant_fixe' => max(0, $prixBase - $promotion['valeur_reduction']),
+            default => $prixBase,
+        };
+    }
+
     private function generateNumeroCommande(): string
     {
         $last = Commande::lockForUpdate()
             ->selectRaw("MAX(CAST(SUBSTRING(numero_commande, 2) AS UNSIGNED)) as max")
             ->value('max');
 
-        $next = ($last ?? 0) + 1;
-
-        return 'T' . $next;
+        return 'T' . (($last ?? 0) + 1);
     }
 }

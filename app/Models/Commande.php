@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Enums\CommandeStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
 class Commande extends Model
 {
     //
+
+
 
     protected $fillable = [
         'user_id',
@@ -33,6 +36,7 @@ class Commande extends Model
     {
         return $this->belongsTo(User::class);
     }
+
 
 
 }

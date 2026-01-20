@@ -33,7 +33,11 @@ Route::prefix('table')->group(function () {
 });
 
 
-    Route::post('/commandes', [CommandeController::class, 'store']);
-
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/commandes', [CommandeController::class, 'storeUser']);
+    Route::get('/commandes', [CommandeController::class, 'index']);
     Route::get('/commandes/{id}', [CommandeController::class, 'show']);
-    Route::get('/commandes/guest/{token}', [CommandeController::class, 'byGuest']);
+});
+
+Route::post('/commandes/guest', [CommandeController::class, 'storeGuest']);
+Route::get('/commandes/guest/{token}', [CommandeController::class, 'byGuest']);
