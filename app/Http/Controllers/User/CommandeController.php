@@ -14,7 +14,8 @@ class CommandeController extends Controller
 {
     public function __construct(
         protected PromotionService $promotionService
-    ) {}
+    ) {
+    }
 
     /* ============================================================
         STORE USER (AUTH OBLIGATOIRE)
@@ -206,5 +207,173 @@ class CommandeController extends Controller
             ->value('max');
 
         return 'T' . (($last ?? 0) + 1);
+    }
+
+    public function update(Request $request, int $id)
+    {
+        try {
+            $user = auth()->user();
+            $guestToken = $request->header('X-Guest-Token');
+
+            $commande = Commande::with('produits')->findOrFail($id);
+
+            // Vérification propriétaire
+            if ($user) {
+                if ($commande->user_id !== $user->id) {
+                    abort(403, 'Non autorisé');
+                }
+            } elseif ($guestToken) {
+                if ($commande->guest_token !== $guestToken) {
+                    abort(403, 'Non autorisé');
+                }
+            } else {
+                abort(403, 'Non autorisé');
+            }
+
+            // Vérification statut
+            if ($commande->status !== 'in_progress') {
+                abort(400, 'Commande non modifiable');
+            }
+
+            $validated = $request->validate([
+                'commentaire_client' => 'nullable|string',
+                'items' => 'required|array|min:1',
+                'items.*.produit_id' => 'required|exists:produits,id',
+                'items.*.quantite' => 'required|integer|min:1',
+            ]);
+
+            return DB::transaction(function () use ($commande, $validated) {
+
+                // 🔁 1. Restaurer ancien stock
+                foreach ($commande->produits as $ligne) {
+                    $ligne->produit()->increment('qteStock', $ligne->quantite);
+                }
+
+                // 🔥 2. Supprimer anciennes lignes
+                $commande->produits()->delete();
+
+                $total = 0;
+                $nouvellesLignes = [];
+
+                foreach ($validated['items'] as $item) {
+
+                    $produit = Produit::lockForUpdate()->find($item['produit_id']);
+
+                    if (!$produit || !$produit->actif) {
+                        abort(400, 'Produit indisponible');
+                    }
+
+                    if ($produit->qteStock < $item['quantite']) {
+                        abort(400, "Stock insuffisant pour {$produit->nomProd}");
+                    }
+
+                    $promotions = $this->promotionService->getPromotionsForProduit($produit);
+                    $reduction = collect($promotions)->firstWhere('type', 'reduction_prix');
+
+                    $prixUnitaire = $reduction
+                        ? $this->calculerPrixFinal($produit->prixBase, $reduction)
+                        : $produit->prixBase;
+
+                    $total += $prixUnitaire * $item['quantite'];
+
+                    $nouvellesLignes[] = [
+                        'produit_id' => $produit->id,
+                        'quantite' => $item['quantite'],
+                        'prix_unitaire' => $prixUnitaire,
+                    ];
+
+                    $produit->decrement('qteStock', $item['quantite']);
+                }
+
+                foreach ($nouvellesLignes as $ligne) {
+                    $commande->produits()->create($ligne);
+                }
+
+                $commande->update([
+                    'commentaire_client' => $validated['commentaire_client'] ?? null,
+                    'total' => $total,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'commande' => $commande->load([
+                        'table:id,numero_table,libelle',
+                        'produits.produit:id,nomProd,taille'
+                    ])
+                ]);
+            });
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Commande non trouvée'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur serveur: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function destroy(Request $request, int $id)
+    {
+        try {
+            $user = auth()->user();
+            $guestToken = $request->header('X-Guest-Token');
+
+            $commande = Commande::with('produits')->findOrFail($id);
+
+            // Vérification propriétaire
+            if ($user) {
+                if ($commande->user_id !== $user->id) {
+                    abort(403, 'Non autorisé');
+                }
+            } elseif ($guestToken) {
+                if ($commande->guest_token !== $guestToken) {
+                    abort(403, 'Non autorisé');
+                }
+            } else {
+                abort(403, 'Non autorisé');
+            }
+
+            if ($commande->status !== 'in_progress') {
+                abort(400, 'Impossible de supprimer cette commande');
+            }
+
+            return DB::transaction(function () use ($commande) {
+
+                // 🔁 Restaurer stock
+                foreach ($commande->produits as $ligne) {
+                    $ligne->produit()->increment('qteStock', $ligne->quantite);
+                }
+
+                // 🔥 Option 1 : suppression physique
+                $commande->delete();
+
+                // 🔥 Option 2 (recommandé pour audit) :
+                // $commande->update(['status' => 'cancelled']);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Commande supprimée'
+                ]);
+            });
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Commande non trouvée'
+            ], 404);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur serveur: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

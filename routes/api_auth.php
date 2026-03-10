@@ -11,6 +11,8 @@ Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
     Route::middleware('auth:sanctum')->post('profile', [AuthController::class, 'updateProfile']);
+    // suppression email/phone (doit toujours rester un contact actif)
+    Route::middleware('auth:sanctum')->post('delete-contact', [AuthController::class, 'deleteContact']);
 
     // Mot de passe oublié
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
@@ -19,6 +21,7 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->delete('delete-account', [AuthController::class, 'deleteAccount']);
     Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
     Route::middleware('auth:sanctum')->get('/me', [AuthController::class, 'me']);
+    Route::middleware('auth:sanctum')->post('/change-password', [AuthController::class, 'changePassword']);
 });
 
 

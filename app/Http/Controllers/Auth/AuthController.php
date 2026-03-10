@@ -476,5 +476,117 @@ class AuthController extends Controller
         }
     }
 
+    // �️ SUPPRESSION D'UN MOYEN DE CONTACT
+    /**
+     * Permet à un utilisateur de supprimer soit son email, soit son téléphone.
+     *
+     * Seules les personnes disposant des deux informations peuvent en supprimer
+     * une — on ne doit jamais finir avec aucun contact. La vérification des
+     * tentatives d'inscription initiale n'est pas stockée ; on se base donc
+     * simplement sur la présence des deux champs.
+     */
+    public function deleteContact(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            $request->validate([
+                'type' => 'required|in:email,phone',
+            ], [
+                'type.required' => 'Le type de contact à supprimer est requis.',
+                'type.in' => 'Le type doit être soit "email" soit "phone".',
+            ]);
+
+            // capacité : on ne peut pas supprimer le dernier contact
+            $hasEmail = !empty($user->email);
+            $hasPhone = !empty($user->phone);
+            $remainingContacts = ($hasEmail ? 1 : 0) + ($hasPhone ? 1 : 0);
+
+            if ($remainingContacts <= 1) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Impossible de supprimer le dernier moyen de contact. Veuillez ajouter un email ou un numéro avant de supprimer celui-ci.',
+                ], 422);
+            }
+
+            if ($request->type === 'email') {
+                if (!$hasEmail) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Aucun email associé à ce compte.',
+                    ], 422);
+                }
+                $user->email = null;
+            } else {
+                if (!$hasPhone) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Aucun numéro de téléphone associé à ce compte.',
+                    ], 422);
+                }
+                $user->phone = null;
+            }
+
+            $user->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => ucfirst($request->type) . ' supprimé(e) avec succès',
+                'user' => $user,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => 'Validation échouée', 'errors' => $e->errors()], 422);
+        } catch (\Throwable $th) {
+            return response()->json(['message' => 'Erreur serveur', 'error' => $th->getMessage()], 500);
+        }
+    }
+
+    // �🔹 CHANGE PASSWORD
+    public function changePassword(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            // Validation
+            $request->validate([
+                'current_password' => 'required|string',
+                'password' => 'required|string|min:6|confirmed',
+            ], [
+                'current_password.required' => 'Le mot de passe actuel est requis.',
+                'password.required' => 'Le nouveau mot de passe est requis.',
+                'password.confirmed' => 'La confirmation du mot de passe ne correspond pas.',
+                'password.min' => 'Le mot de passe doit contenir au moins 6 caractères.',
+            ]);
+
+            // Vérifier que le mot de passe actuel est correct
+            if (!Hash::check($request->current_password, $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Le mot de passe actuel est incorrect'
+                ], 422);
+            }
+
+            // Mettre à jour le mot de passe
+            $user->password = Hash::make($request->password);
+            $user->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Mot de passe modifié avec succès'
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation échouée',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur serveur',
+                'error' => $th->getMessage()
+            ], 500);
+        }
+    }
 
 }
