@@ -63,6 +63,7 @@ class CommandeController extends Controller
             'items' => 'required|array|min:1',
             'items.*.produit_id' => 'required|exists:produits,id',
             'items.*.quantite' => 'required|integer|min:1',
+            'items.*.quantite_offerte' => 'nullable|integer|min:0',
         ]);
 
         return DB::transaction(function () use ($validated, $userId, $guestToken) {
@@ -77,7 +78,9 @@ class CommandeController extends Controller
                     abort(400, 'Produit indisponible');
                 }
 
-                if ($produit->qteStock < $item['quantite']) {
+                $qteStockADeduire = $item['quantite'] + ($item['quantite_offerte'] ?? 0);
+
+                if ($produit->qteStock < $qteStockADeduire) {
                     abort(400, "Stock insuffisant pour {$produit->nomProd}");
                 }
 
@@ -93,10 +96,11 @@ class CommandeController extends Controller
                 $lignes[] = [
                     'produit_id' => $produit->id,
                     'quantite' => $item['quantite'],
+                    'quantite_offerte' => $item['quantite_offerte'] ?? 0,
                     'prix_unitaire' => $prixUnitaire,
                 ];
 
-                $produit->decrement('qteStock', $item['quantite']);
+                $produit->decrement('qteStock', $qteStockADeduire);
             }
 
             $commande = Commande::create([
@@ -240,13 +244,15 @@ class CommandeController extends Controller
                 'items' => 'required|array|min:1',
                 'items.*.produit_id' => 'required|exists:produits,id',
                 'items.*.quantite' => 'required|integer|min:1',
+                'items.*.quantite_offerte' => 'nullable|integer|min:0',
             ]);
 
             return DB::transaction(function () use ($commande, $validated) {
 
                 // 🔁 1. Restaurer ancien stock
                 foreach ($commande->produits as $ligne) {
-                    $ligne->produit()->increment('qteStock', $ligne->quantite);
+                    $stockToRestore = $ligne->quantite + ($ligne->quantite_offerte ?? 0);
+                    $ligne->produit()->increment('qteStock', $stockToRestore);
                 }
 
                 // 🔥 2. Supprimer anciennes lignes
@@ -263,7 +269,9 @@ class CommandeController extends Controller
                         abort(400, 'Produit indisponible');
                     }
 
-                    if ($produit->qteStock < $item['quantite']) {
+                    $qteStockADeduire = $item['quantite'] + ($item['quantite_offerte'] ?? 0);
+
+                    if ($produit->qteStock < $qteStockADeduire) {
                         abort(400, "Stock insuffisant pour {$produit->nomProd}");
                     }
 
@@ -279,10 +287,11 @@ class CommandeController extends Controller
                     $nouvellesLignes[] = [
                         'produit_id' => $produit->id,
                         'quantite' => $item['quantite'],
+                        'quantite_offerte' => $item['quantite_offerte'] ?? 0,
                         'prix_unitaire' => $prixUnitaire,
                     ];
 
-                    $produit->decrement('qteStock', $item['quantite']);
+                    $produit->decrement('qteStock', $qteStockADeduire);
                 }
 
                 foreach ($nouvellesLignes as $ligne) {
@@ -350,7 +359,8 @@ class CommandeController extends Controller
 
                 // 🔁 Restaurer stock
                 foreach ($commande->produits as $ligne) {
-                    $ligne->produit()->increment('qteStock', $ligne->quantite);
+                    $stockToRestore = $ligne->quantite + ($ligne->quantite_offerte ?? 0);
+                    $ligne->produit()->increment('qteStock', $stockToRestore);
                 }
 
                 // 🔥 Option 1 : suppression physique

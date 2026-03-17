@@ -10,6 +10,7 @@ class CommandeProduit extends Model
         'commande_id',
         'produit_id',
         'quantite',
+        'quantite_offerte',
         'prix_unitaire',
     ];
 

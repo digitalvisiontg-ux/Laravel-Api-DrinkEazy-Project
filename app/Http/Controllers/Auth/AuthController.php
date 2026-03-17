@@ -188,6 +188,7 @@ class AuthController extends Controller
             $request->validate([
                 'login' => 'required|string', // email ou phone
                 'otp' => 'required|digits:6',
+                'is_password_reset' => 'nullable|boolean',
             ]);
 
             // 🔹 Trouver l'utilisateur
@@ -234,6 +235,13 @@ class AuthController extends Controller
 
             $user->save();
 
+            // 🔹 Si c'est pour une réinitialisation de mot de passe, on ne renvoie pas de token
+            if ($request->boolean('is_password_reset')) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'OTP valide ✅',
+                ]);
+            }
 
             // 🔹 Générer un token Sanctum
             $token = $user->createToken('auth_token')->plainTextToken;
@@ -476,13 +484,13 @@ class AuthController extends Controller
         }
     }
 
-    // �️ SUPPRESSION D'UN MOYEN DE CONTACT
-    /**
+    //  �️ SUPPRESSION D'UN MOYEN DE CONTACT
+    /***
      * Permet à un utilisateur de supprimer soit son email, soit son téléphone.
      *
      * Seules les personnes disposant des deux informations peuvent en supprimer
      * une — on ne doit jamais finir avec aucun contact. La vérification des
-     * tentatives d'inscription initiale n'est pas stockée ; on se base donc
+     * tentatives d'inscription initiale n'est pas stockéhashedValue: e ; on se base donc
      * simplement sur la présence des deux champs.
      */
     public function deleteContact(Request $request)
