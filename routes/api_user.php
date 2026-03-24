@@ -33,18 +33,21 @@ Route::prefix('table')->group(function () {
 });
 
 
-Route::middleware('auth:sanctum')->group(function () {
 
+Route::post('/commandes/guest', [CommandeController::class , 'storeGuest']);
+Route::get('/commandes/guest/{token}', [CommandeController::class , 'byGuest']);
+Route::post('/commandes/{id}/guest', [CommandeController::class , 'update']);
+Route::delete('/commandes/{id}/guest', [CommandeController::class , 'destroy']);
+
+
+
+Route::middleware('auth:sanctum')->group(function () {
+    // 
     Route::post('/commandes', [CommandeController::class , 'storeUser']);
     Route::get('/commandes', [CommandeController::class , 'index']);
     Route::get('/commandes/{id}', [CommandeController::class , 'show']);
-
+    // 
     // 🔵 UPDATE / DELETE USER
     Route::post('/commandes/{id}', [CommandeController::class , 'update']);
     Route::delete('/commandes/{id}', [CommandeController::class , 'destroy']);
 });
-
-// Route::post('/commandes/guest', [CommandeController::class , 'storeGuest']);
-// Route::get('/commandes/guest/{token}', [CommandeController::class , 'byGuest']);
-// Route::post('/commandes/{id}/guest', [CommandeController::class , 'update']);
-// Route::delete('/commandes/{id}/guest', [CommandeController::class , 'destroy']);

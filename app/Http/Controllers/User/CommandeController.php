@@ -9,6 +9,8 @@ use App\Services\PromotionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class CommandeController extends Controller
 {
@@ -57,74 +59,93 @@ class CommandeController extends Controller
     ============================================================ */
     private function createCommande(Request $request, ?int $userId, ?string $guestToken)
     {
-        $validated = $request->validate([
-            'table_id' => 'required|exists:tables,id',
-            'commentaire' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.produit_id' => 'required|exists:produits,id',
-            'items.*.quantite' => 'required|integer|min:1',
-            'items.*.quantite_offerte' => 'nullable|integer|min:0',
-        ]);
-
-        return DB::transaction(function () use ($validated, $userId, $guestToken) {
-
-            $total = 0;
-            $lignes = [];
-
-            foreach ($validated['items'] as $item) {
-                $produit = Produit::lockForUpdate()->find($item['produit_id']);
-
-                if (!$produit || !$produit->actif) {
-                    abort(400, 'Produit indisponible');
-                }
-
-                $qteStockADeduire = $item['quantite'] + ($item['quantite_offerte'] ?? 0);
-
-                if ($produit->qteStock < $qteStockADeduire) {
-                    abort(400, "Stock insuffisant pour {$produit->nomProd}");
-                }
-
-                $promotions = $this->promotionService->getPromotionsForProduit($produit);
-                $reduction = collect($promotions)->firstWhere('type', 'reduction_prix');
-
-                $prixUnitaire = $reduction
-                    ? $this->calculerPrixFinal($produit->prixBase, $reduction)
-                    : $produit->prixBase;
-
-                $total += $prixUnitaire * $item['quantite'];
-
-                $lignes[] = [
-                    'produit_id' => $produit->id,
-                    'quantite' => $item['quantite'],
-                    'quantite_offerte' => $item['quantite_offerte'] ?? 0,
-                    'prix_unitaire' => $prixUnitaire,
-                ];
-
-                $produit->decrement('qteStock', $qteStockADeduire);
-            }
-
-            $commande = Commande::create([
-                'numero_commande' => $this->generateNumeroCommande(),
-                'table_id' => $validated['table_id'],
-                'user_id' => $userId,
-                'guest_token' => $guestToken,
-                'commentaire_client' => $validated['commentaire'] ?? null,
-                'status' => 'in_progress',
-                'total' => $total,
+        try {
+            $validated = $request->validate([
+                'table_id' => ['required', Rule::exists('tables', 'id')->where('actif', true)],
+                'commentaire' => 'nullable|string',
+                'commentaire_client' => 'nullable|string',
+                'items' => 'required|array|min:1',
+                'items.*.produit_id' => 'required|exists:produits,id',
+                'items.*.quantite' => 'required|integer|min:1',
+                'items.*.quantite_offerte' => 'nullable|integer|min:0',
             ]);
 
-            foreach ($lignes as $ligne) {
-                $commande->produits()->create($ligne);
-            }
+            return DB::transaction(function () use ($validated, $userId, $guestToken) {
 
+                $total = 0;
+                $lignes = [];
+
+                foreach ($validated['items'] as $item) {
+                    $produit = Produit::lockForUpdate()->find($item['produit_id']);
+
+                    if (!$produit || !$produit->actif) {
+                        abort(400, 'Produit indisponible');
+                    }
+
+                    $qteStockADeduire = $item['quantite'] + ($item['quantite_offerte'] ?? 0);
+
+                    if ($produit->qteStock < $qteStockADeduire) {
+                        abort(400, "Stock insuffisant pour {$produit->nomProd}");
+                    }
+
+                    $promotions = $this->promotionService->getPromotionsForProduit($produit);
+                    $reduction = collect($promotions)->firstWhere('type', 'reduction_prix');
+
+                    $prixUnitaire = $reduction
+                        ? $this->calculerPrixFinal($produit->prixBase, $reduction)
+                        : $produit->prixBase;
+
+                    $total += $prixUnitaire * $item['quantite'];
+
+                    $lignes[] = [
+                        'produit_id' => $produit->id,
+                        'quantite' => $item['quantite'],
+                        'quantite_offerte' => $item['quantite_offerte'] ?? 0,
+                        'prix_unitaire' => $prixUnitaire,
+                    ];
+
+                    $produit->decrement('qteStock', $qteStockADeduire);
+                }
+
+                $commande = Commande::create([
+                    'numero_commande' => $this->generateNumeroCommande(),
+                    'table_id' => $validated['table_id'],
+                    'user_id' => $userId,
+                    'guest_token' => $guestToken,
+                    'commentaire_client' => $validated['commentaire_client'] ?? $validated['commentaire'] ?? null,
+                    'status' => 'in_progress',
+                    'total' => $total,
+                ]);
+
+                foreach ($lignes as $ligne) {
+                    $commande->produits()->create($ligne);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'commande' => $commande->load([
+                        'table:id,numero_table,libelle',
+                        'produits.produit:id,nomProd,taille'
+                    ])
+                ], 201);
+            });
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
-                'success' => true,
-                'commande' => $commande->load([
-                    'table:id,numero_table,libelle',
-                    'produits.produit:id,nomProd,taille'
-                ])
-            ], 201);
-        });
+                'success' => false,
+                'message' => 'Erreur de validation',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (HttpException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], $e->getStatusCode());
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erreur serveur: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /* ============================================================
@@ -322,6 +343,11 @@ class CommandeController extends Controller
                 'success' => false,
                 'message' => 'Commande non trouvée'
             ], 404);
+        } catch (HttpException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], $e->getStatusCode());
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -379,6 +405,11 @@ class CommandeController extends Controller
                 'success' => false,
                 'message' => 'Commande non trouvée'
             ], 404);
+        } catch (HttpException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], $e->getStatusCode());
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
